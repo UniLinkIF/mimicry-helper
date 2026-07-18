@@ -14,6 +14,11 @@ jobs:
         uses: egor-tensin/setup-mingw@v2
         with:
           platform: x64
+          # The action's post-install "static" pthread-lib workaround (default on) tries to
+          # delete a libpthread.dll.a this particular MinGW-w64 build (16.1.0, ucrt/posix)
+          # doesn't ship, which fails the whole step even though MinGW itself installs fine.
+          # This driver doesn't use <mutex>/<thread>, so the workaround isn't needed anyway.
+          static: 0
 
       - name: Build mimicry-helper.exe
         shell: bash
