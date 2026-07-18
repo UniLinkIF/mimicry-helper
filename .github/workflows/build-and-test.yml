@@ -1,0 +1,48 @@
+name: Build and round-trip test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MinGW-w64
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
+      - name: Build mimicry-helper.exe
+        shell: bash
+        run: bash build.sh
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimicry-helper-exe
+          path: mimicry-helper.exe
+
+      - name: Round-trip smoke test (obj-to-mesh -> mesh-to-obj)
+        shell: bash
+        run: |
+          set -e
+          ./mimicry-helper.exe obj-to-mesh test-fixtures/triangle.obj out.xmsh
+          echo "--- obj-to-mesh succeeded, out.xmsh: ---"
+          ls -la out.xmsh
+          ./mimicry-helper.exe mesh-to-obj out.xmsh roundtrip.obj
+          echo "--- mesh-to-obj succeeded on the written file: ---"
+          cat roundtrip.obj
+
+      - name: Upload round-trip artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roundtrip-debug
+          path: |
+            out.xmsh
+            roundtrip.obj
+            roundtrip.mtl
+          if-no-files-found: ignore

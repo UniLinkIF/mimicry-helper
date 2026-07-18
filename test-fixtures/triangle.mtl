@@ -1,0 +1,2 @@
+newmtl TestMat
+map_Kd test_diffuse.png
