@@ -9,7 +9,7 @@ code directly — RisenLab just shells out to `mimicry-helper.exe`. See
 Because this binary links the GPL mimicry library, the resulting executable is a GPL-3.0
 derivative work — see `LICENSE.txt` (copied from rmtools).
 
-## Status (2026-07-14)
+## Status (2026-07-18)
 
 - ✅ `material-dump` — fully working. Verified against a real `.xmat` from the game: correctly
   walks the entire shader graph (samplers, combiners, constants) and prints every property
@@ -17,9 +17,24 @@ derivative work — see `LICENSE.txt` (copied from rmtools).
   this project reuses it instead of re-deriving it.
 - ✅ `mesh-to-obj` — fully working. Verified against a real `.xmsh` (`UI/Crosshair._xmsh`):
   produces a valid, Blender-openable `.obj` with correct vertices and texture coordinates.
-- ⚠️ `obj-to-mesh` (import direction) — writes a file, but it doesn't yet re-parse via
-  `mesh-to-obj`. Not yet root-caused; needs more investigation before it's safe to use for
-  real mesh replacement.
+- ✅ `obj-to-mesh` (import direction) — **fixed 2026-07-18**, now round-trips correctly
+  (`obj-to-mesh` → `mesh-to-obj` on a synthetic triangle produces a valid `.obj` with the
+  right vertex/face/material data — see `.github/workflows/build-and-test.yml`, which runs
+  this exact round-trip on every push). Three real bugs in `mi_xmshwriter.cpp`, all found via
+  a real MinGW build (this couldn't be diagnosed from source alone) plus hex-diffing the
+  actual compiled binary's output against what `mi_xmshreader.cpp` expects:
+  1. The vertex-declaration table wrote only 9 of the 16 entries the reader unconditionally
+     reads (72 vs. 128 bytes) — every byte after it was shifted by the missing 56.
+  2. The `MaterialName` property's size field mixed a `MIU32` with `sizeof(MIU16)` (a
+     `size_t`) in one addition — on this 64-bit MinGW build that silently widened the whole
+     expression to 8 bytes where the reader expects exactly 4 (harmless on the original
+     32-bit MSVC target, where `size_t` was 4 bytes too).
+  3. A stray, pre-existing 56-byte zero block sat between the declaration table and the
+     vertex-stream-size field, which the reader never skips there (it reads that field
+     immediately after the table) — this alone caused `uVertexStreamSize`/`uVertexSize` to
+     both read as 0, an integer division by zero.
+  Still worth real-world testing against an actual `._xmsh` (not just the synthetic CI
+  fixture) and, ultimately, the real game engine before trusting it for mesh replacement.
 - Not attempted yet: animations (`.xact`), collision meshes (`.xcom` — excluded from the build
   entirely, needs the PhysX-dependent `mi_cooking.cpp` which we don't have the SDK for).
 
@@ -63,11 +78,18 @@ bash build.sh
 
 Produces `mimicry-helper.exe`.
 
+CI (`.github/workflows/build-and-test.yml`) builds this same way on a real Windows+MinGW
+GitHub Actions runner on every push, then runs the `obj-to-mesh` → `mesh-to-obj` round-trip
+smoke test against `test-fixtures/triangle.obj` — this exists specifically because no C++
+compiler was available in the environment that found and fixed the three bugs above; without
+a real build, the whole class of bug (a compiler silently doing something 4 bytes different
+than the source implies) is invisible from reading the code.
+
 ## Usage
 
 ```
 mimicry-helper mesh-to-obj <in.xmsh> <out.obj>
-mimicry-helper obj-to-mesh <in.obj> <out.xmsh>      # writes, but doesn't yet re-parse — see Status
+mimicry-helper obj-to-mesh <in.obj> <out.xmsh>
 mimicry-helper material-dump <in.xmat> <out.txt>
 ```
 
