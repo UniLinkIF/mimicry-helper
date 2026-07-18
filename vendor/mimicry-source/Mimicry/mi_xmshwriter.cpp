@@ -131,7 +131,20 @@ mEResult mCXmshWriter::WriteXmshFileData( mCScene a_sceneSource, mCIOStreamBinar
     a_streamDest << ( MIU16 ) 000 << ( MIU16 ) 44 << ( MIU8 ) 01 << ( MIU8 ) 0 << ( MIU8 ) 05 << ( MIU8 ) 0;
     a_streamDest << ( MIU16 ) 003 << ( MIU16 ) 00 << ( MIU8 ) 00 << ( MIU8 ) 0 << ( MIU8 ) 05 << ( MIU8 ) 4;
     a_streamDest << ( MIU16 ) 255 << ( MIU16 ) 00 << ( MIU8 ) 17 << ( MIU8 ) 0 << ( MIU8 ) 00 << ( MIU8 ) 0;  // D3DDECL_END
-    a_streamDest << ( MIU16 ) 255 << ( MIU16 ) 00 << ( MIU8 ) 17 << ( MIU8 ) 0 << ( MIU8 ) 00 << ( MIU8 ) 0;  // D3DDECL_END
+    // mCXmshReader::ReadXmshFileData reads this whole declaration table as a FIXED
+    // `SVertexElement arrVertexBufferDeclarations[16]` (16 * 8 = 128 bytes) in one unconditional
+    // `Read()`, regardless of how many entries are actually meaningful (its own scan loop stops
+    // at the first D3DDECL_END, Type==17, same as the one right above). This writer previously
+    // emitted only 9 entries (one D3DDECL_END here plus the 8 real declarations above) — 72
+    // bytes — so the reader's blind 128-byte read consumed 56 bytes belonging to whatever the
+    // writer wrote NEXT (the vertex-stream-size header fields), desynchronizing every offset
+    // after this point and making every obj-to-mesh output fail to re-parse. Pad with D3DDECL_END
+    // filler entries up to the full 16 the reader always reads — this is the actual root cause
+    // (found via a real MinGW build + a round-trip CI smoke test on a synthetic triangle,
+    // 2026-07-18; the on-disk consequence was confirmed byte-for-byte against a real compiled
+    // .exe's output before this fix, not guessed from source alone).
+    for ( MIUInt u = 8; u != 16; ++u )
+        a_streamDest << ( MIU16 ) 255 << ( MIU16 ) 00 << ( MIU8 ) 17 << ( MIU8 ) 0 << ( MIU8 ) 00 << ( MIU8 ) 0;  // D3DDECL_END padding
     a_streamDest << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0;
     a_streamDest << ( MIU32 )( arrUVerts.GetCount() * 52 ) << ( MIU32 ) 0 << ( MIU32 ) 0 << ( MIU32 ) 1 << ( MIU32 ) 52;
     a_streamDest << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0;
