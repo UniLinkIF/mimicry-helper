@@ -89,7 +89,16 @@ mEResult mCXmshWriter::WriteXmshFileData( mCScene a_sceneSource, mCIOStreamBinar
         a_streamDest << u16PropertySystemVersion << ( MIU32 ) 6;
         WriteString( a_streamDest, "MaterialName" );
         WriteString( a_streamDest, "bCString" );
-        a_streamDest << u16PropertyVersion << ( MIU32 ) strMaterialName.GetLength() + sizeof( MIU16 );
+        // Root cause #2 (found the same way as the vertex-declaration-table one above): the
+        // cast here only applied to `strMaterialName.GetLength()`, not the `+ sizeof(MIU16)`
+        // addition — on a 32-bit MSVC build (this code's original target) that was harmless,
+        // since `size_t` and MIU32 were both 4 bytes there. On this 64-bit MinGW build,
+        // `sizeof(MIU16)` is an 8-byte `size_t`, so the addition's usual-arithmetic-conversions
+        // silently widen the WHOLE expression to 64 bits before `operator<<` ever sees it —
+        // writing 8 bytes (`0f 00 00 00 00 00 00 00`) where the reader's `ReadU32()` expects
+        // exactly 4, shifting every byte after it by 4. Wrapping the whole addition in the cast
+        // forces the write back down to the 4 bytes the format actually uses everywhere else.
+        a_streamDest << u16PropertyVersion << ( MIU32 )( strMaterialName.GetLength() + sizeof( MIU16 ) );
         WriteString( a_streamDest, strMaterialName );
         WriteString( a_streamDest, "Extends" );
         WriteString( a_streamDest, "bCBox" );
