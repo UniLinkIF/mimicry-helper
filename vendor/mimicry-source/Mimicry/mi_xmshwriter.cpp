@@ -154,7 +154,16 @@ mEResult mCXmshWriter::WriteXmshFileData( mCScene a_sceneSource, mCIOStreamBinar
     // .exe's output before this fix, not guessed from source alone).
     for ( MIUInt u = 8; u != 16; ++u )
         a_streamDest << ( MIU16 ) 255 << ( MIU16 ) 00 << ( MIU8 ) 17 << ( MIU8 ) 0 << ( MIU8 ) 00 << ( MIU8 ) 0;  // D3DDECL_END padding
-    a_streamDest << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0;
+    // Root cause #3 — pre-existing, not introduced by the two fixes above: this 56-byte block
+    // of zeros used to sit HERE, between the declaration table and the vertex-stream-size
+    // field. `mCXmshReader::ReadXmshFileData` reads `uVertexStreamSize` via `ReadU32()`
+    // IMMEDIATELY after the 128-byte declaration table — no skip in between — so these 56
+    // stray bytes were read as `uVertexStreamSize`/`uVertexSize` themselves (both landing on
+    // zero, confirmed via a real compiled binary's output: a synthetic single-triangle mesh
+    // produced `uVertexStreamSize=0` and `uVertexSize=0`, an integer division by zero). The
+    // reader DOES skip 56 bytes, but only AFTER reading `uVertexSize` (right before the actual
+    // per-vertex data) — matching the *separate* zero block a few lines below this one, which
+    // was always correctly placed. This misplaced duplicate is simply removed.
     a_streamDest << ( MIU32 )( arrUVerts.GetCount() * 52 ) << ( MIU32 ) 0 << ( MIU32 ) 0 << ( MIU32 ) 1 << ( MIU32 ) 52;
     a_streamDest << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0 << ( MIU64 ) 0;
     a_streamDest << ( MIU32 )( arrUVFaces.GetCount() * 12 ) << ( MIU32 ) 0 << ( MIU32 ) 102 << ( MIU32 ) 1;
